@@ -1,0 +1,10 @@
+Based on containers
+    Docker or
+    K8s
+RDB backend
+    PostgreSQL
+    MariaDB
+Bind zone authorives
+Bind resolvers
+ISC DHCPd
+Web mgmt and IPplan
