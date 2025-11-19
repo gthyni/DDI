@@ -7,6 +7,8 @@
 # update the system
 sudo apt update
 sudo apt full-upgrade -y
-sudo apt -y install docker
+sudo apt -y install docker-ce docker-ce-cli containerd.io docker-compose
+
+
 
 

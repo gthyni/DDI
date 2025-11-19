@@ -1,0 +1,19 @@
+erDiagram
+    DOMAINS ||--o{ RECORDS : contains
+    DOMAINS {
+        bigint id PK
+        varchar name "Unikt zon-namn"
+        varchar type "MASTER/SLAVE/NATIVE"
+        int soa_serial "Versionshantering"
+        timestamp created_at
+    }
+    RECORDS {
+        bigint id PK
+        bigint domain_id FK "Länk till DOMAINS"
+        varchar name "FQDN (t.ex. www.example.com)"
+        varchar type "Record type (A, MX, TXT)"
+        varchar content "Datat (IP, Text, etc)"
+        int ttl "Time To Live"
+        int prio "Prioritet (för MX)"
+        boolean disabled "För att snabbt stänga av en post"
+    }
