@@ -1,9 +1,101 @@
+# ---------------------------------------------------------
+# CONFIGMAP 1: Database Initialization
+# ---------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pg-init-sql
+data:
+  # This is the script that will run ONLY on the first startup
+  init.sql: |
+    -- Create the user and database if they don't exist (optional, usually handled by ENV)
+    -- Schema for DNS Master
+    CREATE TABLE IF NOT EXISTS subnets (
+        subnetid    BIGSERIAL PRIMARY KEY,
+        ipaddress   VARCHAR(45),
+        cidr        INTEGER NOT NULL,
+        vrf         INTEGER DEFAULT 0,
+        VLAN        INTEGER DEFAULT 0,
+        location    VARCHAR(255) DEFAULT NULL,
+        comments    VARCHAR(65535) DEFAULT NULL,
+        CONSTRAINT subnet_unique UNIQUE (ipaddress, cidr),
+        CONSTRAINT subnet_cidr_check CHECK (cidr >= 0 AND cidr <= 128),
+        CONSTRAINT vlan_check CHECK (VLAN >= 0 AND VLAN <= 4094),
+        CONSTRAINT vrf_check CHECK (vrf >= 0)
+    );
+    CREATE TABLE IF NOT EXISTS domains (
+        id                    BIGSERIAL PRIMARY KEY,
+        name                  VARCHAR(255) NOT NULL,
+        master                VARCHAR(128) DEFAULT NULL,
+        last_check            INTEGER DEFAULT NULL,
+        type                  VARCHAR(6) NOT NULL,
+        notified_serial       INTEGER DEFAULT NULL,
+        account               VARCHAR(40) DEFAULT NULL,
+        created_at            TIMESTAMP DEFAULT NOW(),
+        comments              VARCHAR(65535) DEFAULT NULL,        
+        CONSTRAINT domain_name_unique UNIQUE (name)
+    );
+    CREATE TABLE IF NOT EXISTS records (
+        id                    BIGSERIAL PRIMARY KEY,
+        domain_id             BIGINT,
+        name                  VARCHAR(255) DEFAULT NULL,
+        type                  VARCHAR(10) DEFAULT NULL,
+        content               VARCHAR(65535) DEFAULT NULL,
+        ttl                   INTEGER DEFAULT 3600,
+        prio                  INTEGER DEFAULT 0,
+        disabled              BOOLEAN DEFAULT FALSE,
+        change_date           INTEGER DEFAULT NULL,
+        subnetid              INTEGER DEFAULT NULL,
+        comments              VARCHAR(255) DEFAULT NULL,
+        CONSTRAINT fk_domain_id FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_records_domain_id ON records(domain_id);
+    CREATE INDEX IF NOT EXISTS idx_records_name_type ON records(name, type);
+    CREATE INDEX IF NOT EXISTS idx_records_ordername ON records(domain_id, name);
+
+---
+# ---------------------------------------------------------
+# CONFIGMAP 2: Nginx Configuration
+# ---------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  # This configures Nginx to proxy traffic to the API container
+  nginx.conf: |
+    events {}
+    http {
+      server {
+        listen 80;
+        
+        location / {
+          # Proxy to the API server (running on port 3000 in the same Pod)
+          proxy_pass http://localhost:3000;
+          
+          # Pass headers for correct logging
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          
+          # Optional: Add CORS headers so web browsers can access this API
+          add_header 'Access-Control-Allow-Origin' '*';
+        }
+      }
+    }
+
+---
+# ---------------------------------------------------------
+# THE POD DEFINITION
+# ---------------------------------------------------------
 apiVersion: v1
 kind: Pod
 metadata:
-  name: postgres-pod
+  name: dns-web-stack
 spec:
   containers:
+    # ---------------------------------------------------------
+    # CONTAINER 1: THE DATABASE
+    # ---------------------------------------------------------
     - name: postgres
       image: docker.io/library/postgres:15
       ports:
@@ -11,23 +103,57 @@ spec:
           hostPort: 5432
       env:
         - name: POSTGRES_USER
-          value: "admin"
+          value: "dnsadmin"
         - name: POSTGRES_PASSWORD
-          value: "secretpassword"
+          value: "dnspassword"
         - name: POSTGRES_DB
-          value: "masterdb"
+          value: "dnsmaster"
       volumeMounts:
+        # 1. Persistent Storage (Where data lives)
         - mountPath: /var/lib/postgresql/data
           name: pg-data
-      securityContext:
-        # This helps with permissions if running rootless
-        allowPrivilegeEscalation: true
-        capabilities:
-            add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
+        # 2. The Initialization Script (Mapped from ConfigMap)
+        - mountPath: /docker-entrypoint-initdb.d/init.sql
+          subPath: init.sql
+          name: init-script-vol
+      
+    # ---------------------------------------------------------
+    # CONTAINER 2: THE REST API (Application Server)
+    # ---------------------------------------------------------
+    - name: api-server
+    #  # REPLACE THIS with your own image (e.g., my-python-api:latest)
+    #  # Here we use 'postgrest' which auto-generates an API from the DB
+      image: docker.io/postgrest/postgrest:latest
+      ports:
+        - containerPort: 3000
+    #      hostPort: 8080  # You will access the API on localhost:8080
+      env:
+        # Notice the host is 'localhost' because they share the Pod!
+        - name: PGRST_DB_URI
+          value: "postgres://dnsadmin:dnspassword@localhost:5432/dnsmaster"
+        - name: PGRST_DB_SCHEMA
+          value: "public"
+        - name: PGRST_DB_ANON_ROLE
+          value: "dnsadmin"
+    # 3. NGINX FRONTEND CONTAINER
+    - name: nginx-proxy
+      image: docker.io/library/nginx:alpine
+      ports:
+        - containerPort: 80
+          hostPort: 8080 # This is the ONLY port accessible from outside
+      volumeMounts:
+        - mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+          name: nginx-conf-vol
   volumes:
     - name: pg-data
       hostPath:
-        # REPLACE THIS with the absolute path to your local folder
-        path: ~/DDI/pg-data
+        # CHANGE THIS to your local folder path
+        path: /Users/gthyni/DDI/pg-dns-data
         type: DirectoryOrCreate
-        
+    - name: init-script-vol
+      configMap:
+        name: pg-init-sql
+    - name: nginx-conf-vol
+      configMap:
+        name: nginx-config
