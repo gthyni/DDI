@@ -3,7 +3,8 @@ musing around the idea of an integration of OSS to an integrated DDI-platform
 
 ## Architecture
 
-A container based platform with "micro services" based on standard components with the "glue" integration to make an integrated system inspired by the excellent Infoblox NIOS system.
+A container based platform with "micro services" based on standard components with the "glue" integration to make an integrated system.
+Inspired by the excellent products in the field by the market leading vendor.
 
 ## Components
   
