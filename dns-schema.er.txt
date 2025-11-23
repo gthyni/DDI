@@ -6,6 +6,7 @@ erDiagram
         varchar type "MASTER/SLAVE/NATIVE"
         int soa_serial "Versionshantering"
         timestamp created_at
+        varchar comments
     }
     RECORDS {
         bigint id PK
@@ -15,5 +16,19 @@ erDiagram
         varchar content "Datat (IP, Text, etc)"
         int ttl "Time To Live"
         int prio "Prioritet (för MX)"
-        boolean disabled "För att snabbt stänga av en post"
+        boolean disabled "for swiftly (temporarly) disable a record"
+        int subnetid "VLAN ID for IPPlan"
+        varchar comments
     }
+    SUBNETS { 
+        int subnetid
+        varchar ipaddress 
+        int cidr
+        int vrf
+        int VLAN
+        varchar location
+        varchar comments
+    }
+
+
+
