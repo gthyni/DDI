@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: postgres-pod
+spec:
+  containers:
+    - name: postgres
+      image: docker.io/library/postgres:15
+      ports:
+        - containerPort: 5432
+          hostPort: 5432
+      env:
+        - name: POSTGRES_USER
+          value: "admin"
+        - name: POSTGRES_PASSWORD
+          value: "secretpassword"
+        - name: POSTGRES_DB
+          value: "masterdb"
+      volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: pg-data
+      securityContext:
+        # This helps with permissions if running rootless
+        allowPrivilegeEscalation: true
+        capabilities:
+            add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
+  volumes:
+    - name: pg-data
+      hostPath:
+        # REPLACE THIS with the absolute path to your local folder
+        path: ~/DDI/pg-data
+        type: DirectoryOrCreate
+        
