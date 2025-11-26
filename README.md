@@ -9,17 +9,25 @@ Inspired by the excellent products in the field by the market leading vendor.
 ## Components
   
   ### Databases
-A containerized POstgreSQL with persistent volume/DB
+A containerized PostgreSQL with persistent volume/DB
 
   ### API
+App server talking to the master database
 
   ### Frontend
+A web front for managing the masterdatabase based on NGINX
 
-  ### Bind
+  ### Zone builder
+Build updated zone files for DNS servers to reflect changed in master DB
+
+  ### DNS services
+The engines running the actual authorive servers and resolvers based on Bind 9
 
   ### DHCP
+Based on ISC dhcpd?
 
   ### IPplan web
+View in management sertvice?
 
 
 
