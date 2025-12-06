@@ -1,0 +1,116 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pg-init-sql
+data:
+  init.sql: |
+    -- ===========================================
+    -- 1. DNS & IPAM SCHEMA (Existing)
+    -- ===========================================
+    CREATE TABLE IF NOT EXISTS subnets (
+        subnetid    BIGSERIAL PRIMARY KEY,
+        ipaddress   VARCHAR(45),
+        cidr        INTEGER NOT NULL,
+        vrf         INTEGER DEFAULT 0,
+        VLAN        INTEGER DEFAULT 0,
+        location    VARCHAR(255) DEFAULT NULL,
+        comments    VARCHAR(65535) DEFAULT NULL,
+        CONSTRAINT subnet_unique UNIQUE (ipaddress, cidr),
+        CONSTRAINT subnet_cidr_check CHECK (cidr >= 0 AND cidr <= 128),
+        CONSTRAINT vlan_check CHECK (VLAN >= 0 AND VLAN <= 4094),
+        CONSTRAINT vrf_check CHECK (vrf >= 0)
+    );
+    CREATE TABLE IF NOT EXISTS domains (
+        id                    BIGSERIAL PRIMARY KEY,
+        name                  VARCHAR(255) NOT NULL,
+        master                VARCHAR(128) DEFAULT NULL,
+        last_check            INTEGER DEFAULT NULL,
+        type                  VARCHAR(6) NOT NULL,
+        notified_serial       INTEGER DEFAULT NULL,
+        account               VARCHAR(40) DEFAULT NULL,
+        created_at            TIMESTAMP DEFAULT NOW(),
+        comments              VARCHAR(65535) DEFAULT NULL,        
+        CONSTRAINT domain_name_unique UNIQUE (name)
+    );
+    CREATE TABLE IF NOT EXISTS records (
+        id                    BIGSERIAL PRIMARY KEY,
+        domain_id             BIGINT,
+        name                  VARCHAR(255) DEFAULT NULL,
+        type                  VARCHAR(10) DEFAULT NULL,
+        content               VARCHAR(65535) DEFAULT NULL,
+        ttl                   INTEGER DEFAULT 3600,
+        prio                  INTEGER DEFAULT 0,
+        disabled              BOOLEAN DEFAULT FALSE,
+        change_date           INTEGER DEFAULT NULL,
+        subnetid              INTEGER DEFAULT NULL,
+        comments              VARCHAR(255) DEFAULT NULL,
+        CONSTRAINT fk_domain_id FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_records_domain_id ON records(domain_id);
+    CREATE INDEX IF NOT EXISTS idx_records_name_type ON records(name, type);
+    CREATE INDEX IF NOT EXISTS idx_records_ordername ON records(domain_id, name);
+
+    -- ===========================================
+    -- 2. DHCP SCHEMA (New)
+    -- ===========================================
+    CREATE TABLE IF NOT EXISTS dhcp_pools (
+        id          BIGSERIAL PRIMARY KEY,
+        subnet_id   BIGINT REFERENCES subnets(subnetid),
+        start_ip    VARCHAR(45) NOT NULL,
+        end_ip      VARCHAR(45) NOT NULL,
+        comments    VARCHAR(255),
+        CONSTRAINT pool_range_check CHECK (start_ip < end_ip)
+    );
+
+    CREATE TABLE IF NOT EXISTS dhcp_leases (
+        id          BIGSERIAL PRIMARY KEY,
+        pool_id     BIGINT REFERENCES dhcp_pools(id),
+        ip_address  VARCHAR(45) NOT NULL UNIQUE,
+        mac_address VARCHAR(17) NOT NULL,
+        hostname    VARCHAR(255),
+        start_time  TIMESTAMP DEFAULT NOW(),
+        end_time    TIMESTAMP NOT NULL,
+        is_active   BOOLEAN DEFAULT TRUE
+    );
+
+    CREATE TABLE IF NOT EXISTS dhcp_reservations (
+        id          BIGSERIAL PRIMARY KEY,
+        subnet_id   BIGINT REFERENCES subnets(subnetid),
+        ip_address  VARCHAR(45) NOT NULL UNIQUE,
+        mac_address VARCHAR(17) NOT NULL UNIQUE,
+        hostname    VARCHAR(255),
+        comments    VARCHAR(255)
+    );
+
+    CREATE TABLE IF NOT EXISTS dhcp_options (
+        id          BIGSERIAL PRIMARY KEY,
+        scope_type  VARCHAR(20) CHECK (scope_type IN ('global', 'subnet', 'pool', 'host')),
+        scope_id    BIGINT, -- Can refer to subnetid, pool.id, etc.
+        code        INTEGER NOT NULL,
+        value       VARCHAR(255) NOT NULL
+    );
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  nginx.conf: |
+    events {}
+    http {
+      server {
+        listen 80;
+        
+        location / {
+          proxy_pass http://localhost:3000;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          
+          # CORS Headers
+          add_header 'Access-Control-Allow-Origin' '*';
+          add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE, PATCH';
+          add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Prefer';
+        }
+      }
+    }
